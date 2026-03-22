@@ -39,25 +39,30 @@ class RailwayProvider(Provider):
                 headers=self._headers,
                 timeout=30,
             )
-            resp.raise_for_status()
-            data = resp.json()
+            # Check body for GQL errors before raising HTTP errors
+            # Railway returns 400 for schema validation failures with useful error messages
+            try:
+                data = resp.json()
+            except Exception:
+                resp.raise_for_status()
+                return {}
+
             if errors := data.get("errors"):
-                raise RuntimeError(f"Railway API error: {errors}")
+                msgs = "; ".join(e.get("message", str(e)) for e in errors)
+                raise RuntimeError(f"Railway API error: {msgs}")
+
+            resp.raise_for_status()
             return data.get("data", {})
 
     async def _get_workspace_id(self) -> str:
-        """Get the user's default workspace/team ID."""
+        """Get the user's default workspace ID."""
         query = """
         query {
             me {
                 id
-                teams {
-                    edges {
-                        node {
-                            id
-                            name
-                        }
-                    }
+                workspaces {
+                    id
+                    name
                 }
             }
         }
@@ -65,26 +70,25 @@ class RailwayProvider(Provider):
         data = await self._gql(query)
         me = data.get("me", {})
 
-        # Use the first team if available, otherwise use personal workspace (user ID)
-        teams = me.get("teams", {}).get("edges", [])
-        if teams:
-            return teams[0]["node"]["id"]
+        workspaces = me.get("workspaces", [])
+        if workspaces:
+            return workspaces[0]["id"]
 
-        # Personal workspace — the user ID is the workspace ID
+        # Fallback to personal workspace (user ID)
         return me["id"]
 
     async def create_project(self, name: str) -> str:
         """Create a Railway project. Returns project ID."""
-        team_id = await self._get_workspace_id()
+        workspace_id = await self._get_workspace_id()
 
         query = """
-        mutation($name: String!, $teamId: String!) {
-            projectCreate(input: { name: $name, teamId: $teamId }) {
+        mutation($name: String!, $wsId: String!) {
+            projectCreate(input: { name: $name, workspaceId: $wsId }) {
                 id
             }
         }
         """
-        data = await self._gql(query, {"name": name, "teamId": team_id})
+        data = await self._gql(query, {"name": name, "wsId": workspace_id})
         return data["projectCreate"]["id"]
 
     async def provision_database(
