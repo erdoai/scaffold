@@ -1,0 +1,88 @@
+# scaffold
+
+Deploy any service stack to Railway/Vercel — zero-touch, agent-friendly.
+
+One YAML manifest. One command. Infrastructure appears.
+
+## Install
+
+```bash
+pipx install scaffold
+# or
+uv tool install scaffold
+```
+
+**Prerequisites:** [Railway CLI](https://docs.railway.app/guides/cli) and optionally [Vercel CLI](https://vercel.com/docs/cli).
+
+## Quickstart
+
+```bash
+# One-time setup (saves tokens to ~/.scaffold/config.yml)
+scaffold init
+
+# Write a manifest (or let Claude generate one)
+scaffold plan "FastAPI server with Postgres and pgvector on Railway"
+
+# Deploy everything
+scaffold up
+
+# Run locally with the same production DB
+scaffold dev
+```
+
+## scaffold.yml
+
+```yaml
+project: my-app
+region: us-west1
+
+services:
+  server:
+    provider: railway
+    runtime: python
+    source: .
+    start: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    health_check: /health
+    env:
+      DATABASE_URL: "${{postgres.url}}"
+
+databases:
+  postgres:
+    provider: railway
+    plugin: postgres
+    extensions: [pgvector]
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `scaffold init` | One-time token setup |
+| `scaffold plan "..."` | Generate manifest from natural language |
+| `scaffold up` | Provision everything (idempotent) |
+| `scaffold dev` | Run locally with production DB |
+| `scaffold status` | Show resources + health checks |
+| `scaffold down` | Tear down resources |
+| `scaffold env pull` | Pull env vars from providers |
+| `scaffold logs <svc>` | Stream service logs |
+
+All commands support `--json` for machine-readable output.
+
+## Agent Integration
+
+Scaffold is designed to be used by coding agents (Claude Code, etc.):
+
+```bash
+# Agent reads the reference doc
+cat $(scaffold docs-path)
+
+# Agent writes scaffold.yml based on what it's building
+# Agent runs scaffold up --json and gets back URLs
+scaffold up --json
+```
+
+See [SCAFFOLD.md](SCAFFOLD.md) for the full agent reference.
+
+## License
+
+MIT
