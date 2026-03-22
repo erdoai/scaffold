@@ -48,16 +48,18 @@ services:
 
 databases:
   postgres:
-    provider: railway
+    provider: railway      # or supabase, neon
     plugin: postgres
     extensions: [pgvector]
 ```
+
+Database providers: **Railway** (default, provisions in-project), **Supabase** (managed Postgres + auth), **Neon** (serverless Postgres).
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `scaffold init` | Interactive provider login (Railway, Vercel, Cloudflare) |
+| `scaffold init` | Interactive provider login (Railway, Supabase, Vercel, Cloudflare) |
 | `scaffold plan` | Scan codebase and auto-generate scaffold.yml |
 | `scaffold up` | Provision everything (idempotent) |
 | `scaffold dev` | Run locally with production DB |

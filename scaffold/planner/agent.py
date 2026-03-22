@@ -202,7 +202,13 @@ def generate_manifest(project_dir: Path | None = None, description: str | None =
         project_dir: Directory to scan. Defaults to cwd.
         description: Optional extra context from the user.
     """
-    import anthropic
+    try:
+        import anthropic
+    except ImportError:
+        raise RuntimeError(
+            "scaffold plan requires the anthropic package. "
+            "Install it with: pip install scaffold[plan]"
+        )
 
     tokens = resolve_tokens(project_dir)
     api_key = tokens.require("anthropic")

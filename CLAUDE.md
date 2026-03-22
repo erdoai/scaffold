@@ -11,8 +11,9 @@ scaffold/
 ├── scaffold/
 │   ├── cli/                # Typer CLI commands
 │   │   ├── main.py         # app entry + init, plan, docs-path
+│   │   ├── _init.py        # interactive provider login (OAuth + token extraction)
 │   │   ├── _up.py          # scaffold up
-│   │   ├── _down.py        # scaffold down
+│   │   ├── _down.py        # scaffold down (with confirmation)
 │   │   ├── _dev.py         # scaffold dev (local runner)
 │   │   ├── _status.py      # scaffold status
 │   │   ├── _env.py         # scaffold env sync/pull
@@ -23,8 +24,10 @@ scaffold/
 │   │   └── loader.py       # YAML loader + validation
 │   ├── providers/
 │   │   ├── base.py         # Provider ABC
-│   │   ├── railway.py      # Railway GraphQL API
-│   │   └── vercel.py       # Vercel REST API
+│   │   ├── railway.py      # Railway GraphQL API (tested e2e)
+│   │   ├── vercel.py       # Vercel REST API
+│   │   ├── supabase.py     # Supabase Management API
+│   │   └── neon.py         # Neon REST API
 │   ├── planner/
 │   │   └── agent.py        # Codebase scanner + Claude manifest generation
 │   ├── config/
@@ -40,16 +43,12 @@ scaffold/
 - **${{ref}} syntax**: `${{postgres.url}}`, `${{server.url}}`, `${{env.VAR}}`
 - **Idempotent provisioning**: state.json tracks what exists, `up` updates not recreates
 - **All commands support `--json`** for agent consumption
+- **Database providers**: railway (default), supabase, neon
+- **Railway GQL**: tested mutations documented at top of railway.py
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .
 scaffold --help
-```
-
-## Testing
-
-```bash
-pytest tests/
 ```

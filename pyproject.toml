@@ -15,9 +15,11 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "httpx>=0.27",
-    "anthropic>=0.40",
     "python-dotenv>=1.0",
 ]
+
+[project.optional-dependencies]
+plan = ["anthropic>=0.40"]
 
 [project.scripts]
 scaffold = "scaffold.cli.main:app"
