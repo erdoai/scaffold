@@ -1,9 +1,19 @@
-"""Railway provider — CLI + GraphQL API wrapper."""
+"""Railway provider — GraphQL API wrapper.
+
+Tested GQL types/mutations:
+- variableCollectionUpsert: uses EnvironmentVariables! type (not Json/JSON)
+- serviceInstanceUpdate: for start command (needs environmentId)
+- serviceUpdate: does NOT support startCommand
+- volumeCreate: for persistent storage
+- tcpProxyCreate: for database public access
+- serviceDomainCreate: for HTTP service public URLs
+"""
 
 from __future__ import annotations
 
 import asyncio
-import json
+import secrets
+import string
 import subprocess
 from typing import Any
 
@@ -39,8 +49,6 @@ class RailwayProvider(Provider):
                 headers=self._headers,
                 timeout=30,
             )
-            # Check body for GQL errors before raising HTTP errors
-            # Railway returns 400 for schema validation failures with useful error messages
             try:
                 data = resp.json()
             except Exception:
@@ -54,42 +62,42 @@ class RailwayProvider(Provider):
             resp.raise_for_status()
             return data.get("data", {})
 
+    # ── Project / workspace ───────────────────────────────────────────────
+
     async def _get_workspace_id(self) -> str:
         """Get the user's default workspace ID."""
-        query = """
-        query {
-            me {
-                id
-                workspaces {
-                    id
-                    name
-                }
-            }
-        }
-        """
-        data = await self._gql(query)
+        data = await self._gql("""
+            query { me { id workspaces { id name } } }
+        """)
         me = data.get("me", {})
-
         workspaces = me.get("workspaces", [])
         if workspaces:
             return workspaces[0]["id"]
-
-        # Fallback to personal workspace (user ID)
         return me["id"]
+
+    async def _get_environment_id(self, project_id: str) -> str:
+        """Get the default (production) environment ID for a project."""
+        data = await self._gql("""
+            query($pid: String!) {
+                project(id: $pid) {
+                    environments { edges { node { id name } } }
+                }
+            }
+        """, {"pid": project_id})
+        edges = data["project"]["environments"]["edges"]
+        return edges[0]["node"]["id"]
 
     async def create_project(self, name: str) -> str:
         """Create a Railway project. Returns project ID."""
         workspace_id = await self._get_workspace_id()
-
-        query = """
-        mutation($name: String!, $wsId: String!) {
-            projectCreate(input: { name: $name, workspaceId: $wsId }) {
-                id
+        data = await self._gql("""
+            mutation($name: String!, $wsId: String!) {
+                projectCreate(input: { name: $name, workspaceId: $wsId }) { id }
             }
-        }
-        """
-        data = await self._gql(query, {"name": name, "wsId": workspace_id})
+        """, {"name": name, "wsId": workspace_id})
         return data["projectCreate"]["id"]
+
+    # ── Database provisioning ─────────────────────────────────────────────
 
     async def provision_database(
         self,
@@ -98,19 +106,7 @@ class RailwayProvider(Provider):
         plugin: str,
         extensions: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Provision a database plugin on Railway."""
-        # Create a service for the database
-        query = """
-        mutation($projectId: String!, $name: String!, $image: String!) {
-            serviceCreate(input: {
-                projectId: $projectId,
-                name: $name,
-                source: { image: $image }
-            }) {
-                id
-            }
-        }
-        """
+        """Provision a database on Railway with password, volume, and TCP proxy."""
         image_map = {
             "postgres": "postgres:16",
             "redis": "redis:7",
@@ -118,65 +114,81 @@ class RailwayProvider(Provider):
             "mongodb": "mongo:7",
         }
         image = image_map.get(plugin, f"{plugin}:latest")
-        data = await self._gql(query, {
-            "projectId": project_id,
-            "name": name,
-            "image": image,
-        })
+
+        # Create the database service
+        data = await self._gql("""
+            mutation($projectId: String!, $name: String!, $image: String!) {
+                serviceCreate(input: {
+                    projectId: $projectId, name: $name, source: { image: $image }
+                }) { id }
+            }
+        """, {"projectId": project_id, "name": name, "image": image})
         service_id = data["serviceCreate"]["id"]
 
-        # For postgres with extensions, we'd set them via env/init scripts
-        # Railway's template databases handle this; for custom images we'd
-        # use a startup SQL script
+        env_id = await self._get_environment_id(project_id)
 
-        # Get the connection URL from the service variables
-        # Railway auto-generates these for database templates
-        url = await self._get_database_url(project_id, service_id, plugin)
+        # Generate credentials and set env vars
+        password = _generate_password()
+        db_env = _get_db_env(plugin, password)
+
+        await self._set_env_vars_raw(project_id, service_id, env_id, db_env)
+
+        # Add persistent volume
+        mount_map = {
+            "postgres": "/var/lib/postgresql/data",
+            "redis": "/data",
+            "mysql": "/var/lib/mysql",
+            "mongodb": "/data/db",
+        }
+        mount_path = mount_map.get(plugin, "/data")
+        await self._gql("""
+            mutation($pid: String!, $svcId: String!, $envId: String!) {
+                volumeCreate(input: {
+                    projectId: $pid, serviceId: $svcId,
+                    environmentId: $envId, mountPath: "%s"
+                }) { id }
+            }
+        """ % mount_path, {"pid": project_id, "svcId": service_id, "envId": env_id})
+
+        # Wait for Railway to initialise the service before creating TCP proxy
+        await asyncio.sleep(3)
+
+        # Create TCP proxy for public access (databases need TCP, not HTTP)
+        port_map = {"postgres": 5432, "redis": 6379, "mysql": 3306, "mongodb": 27017}
+        app_port = port_map.get(plugin, 5432)
+
+        proxy = None
+        for attempt in range(5):
+            try:
+                proxy = await self._gql("""
+                    mutation($svcId: String!, $envId: String!) {
+                        tcpProxyCreate(input: {
+                            serviceId: $svcId, environmentId: $envId, applicationPort: %d
+                        }) { domain proxyPort }
+                    }
+                """ % app_port, {"svcId": service_id, "envId": env_id})
+                break
+            except RuntimeError:
+                if attempt < 4:
+                    await asyncio.sleep(3)
+                else:
+                    raise
+
+        domain = proxy["tcpProxyCreate"]["domain"]
+        proxy_port = proxy["tcpProxyCreate"]["proxyPort"]
+        url = _build_db_url(plugin, password, domain, proxy_port)
 
         return {
             "provider": "railway",
             "railway_project_id": project_id,
             "railway_service_id": service_id,
+            "railway_environment_id": env_id,
             "url": url,
             "plugin": plugin,
             "extensions": extensions or [],
         }
 
-    async def _get_database_url(
-        self, project_id: str, service_id: str, plugin: str
-    ) -> str:
-        """Get the connection URL for a database service."""
-        query = """
-        query($projectId: String!, $serviceId: String!) {
-            variables(projectId: $projectId, serviceId: $serviceId) {
-                key
-                value
-            }
-        }
-        """
-        # Railway may take a moment to provision — poll briefly
-        for _ in range(10):
-            try:
-                data = await self._gql(query, {
-                    "projectId": project_id,
-                    "serviceId": service_id,
-                })
-                variables = data.get("variables", [])
-                url_key = {
-                    "postgres": "DATABASE_URL",
-                    "redis": "REDIS_URL",
-                    "mysql": "MYSQL_URL",
-                    "mongodb": "MONGODB_URL",
-                }.get(plugin, "DATABASE_URL")
-
-                for var in variables:
-                    if var["key"] == url_key:
-                        return var["value"]
-            except Exception:
-                pass
-            await asyncio.sleep(2)
-
-        return f"pending://{plugin}-url-not-yet-available"
+    # ── Service provisioning ──────────────────────────────────────────────
 
     async def provision_service(
         self,
@@ -189,146 +201,128 @@ class RailwayProvider(Provider):
     ) -> dict[str, Any]:
         """Deploy a service to Railway."""
         # Create the service
-        query = """
-        mutation($projectId: String!, $name: String!) {
-            serviceCreate(input: {
-                projectId: $projectId,
-                name: $name
-            }) {
-                id
+        data = await self._gql("""
+            mutation($projectId: String!, $name: String!) {
+                serviceCreate(input: { projectId: $projectId, name: $name }) { id }
             }
-        }
-        """
-        data = await self._gql(query, {"projectId": project_id, "name": name})
+        """, {"projectId": project_id, "name": name})
         service_id = data["serviceCreate"]["id"]
 
-        # Set start command if provided
+        env_id = await self._get_environment_id(project_id)
+
+        # Set start command via serviceInstanceUpdate (not serviceUpdate)
         if start_command:
-            await self._set_service_config(service_id, start_command=start_command)
+            await self._gql("""
+                mutation($svcId: String!, $envId: String!, $cmd: String!) {
+                    serviceInstanceUpdate(
+                        serviceId: $svcId, environmentId: $envId,
+                        input: { startCommand: $cmd }
+                    )
+                }
+            """, {"svcId": service_id, "envId": env_id, "cmd": start_command})
 
         # Set env vars
         if env:
-            await self.set_env_vars(
-                {"railway_service_id": service_id, "railway_project_id": project_id},
-                env,
-            )
+            await self._set_env_vars_raw(project_id, service_id, env_id, env)
 
-        # Get the generated URL
-        url = await self.get_service_url(
-            {"railway_service_id": service_id, "railway_project_id": project_id}
-        )
+        # Generate a public domain for HTTP services
+        url = await self._create_service_domain(service_id, env_id)
 
         return {
             "provider": "railway",
             "railway_project_id": project_id,
             "railway_service_id": service_id,
+            "railway_environment_id": env_id,
             "url": url,
         }
 
-    async def _set_service_config(
-        self, service_id: str, start_command: str | None = None
+    async def _create_service_domain(self, service_id: str, env_id: str) -> str | None:
+        """Create a Railway-generated domain for a service."""
+        try:
+            data = await self._gql("""
+                mutation($svcId: String!, $envId: String!) {
+                    serviceDomainCreate(input: {
+                        serviceId: $svcId, environmentId: $envId
+                    }) { domain }
+                }
+            """, {"svcId": service_id, "envId": env_id})
+            domain = data["serviceDomainCreate"]["domain"]
+            return f"https://{domain}"
+        except Exception:
+            return None
+
+    # ── Env vars ──────────────────────────────────────────────────────────
+
+    async def _set_env_vars_raw(
+        self, project_id: str, service_id: str, env_id: str, env: dict[str, str]
     ) -> None:
-        """Set service configuration (start command, etc.)."""
-        query = """
-        mutation($serviceId: String!, $startCommand: String) {
-            serviceUpdate(id: $serviceId, input: {
-                startCommand: $startCommand
-            }) {
-                id
+        """Set env vars using the correct EnvironmentVariables type."""
+        await self._gql("""
+            mutation($pid: String!, $svcId: String!, $envId: String!, $vars: EnvironmentVariables!) {
+                variableCollectionUpsert(input: {
+                    projectId: $pid, serviceId: $svcId,
+                    environmentId: $envId, variables: $vars
+                })
             }
-        }
-        """
-        await self._gql(query, {
-            "serviceId": service_id,
-            "startCommand": start_command,
-        })
+        """, {"pid": project_id, "svcId": service_id, "envId": env_id, "vars": env})
+
+    async def set_env_vars(
+        self, resource_state: dict[str, Any], env: dict[str, str]
+    ) -> None:
+        """Set env vars on a Railway service."""
+        pid = resource_state.get("railway_project_id")
+        svc_id = resource_state.get("railway_service_id")
+        env_id = resource_state.get("railway_environment_id")
+        if not all([pid, svc_id, env_id]):
+            # Try to get env_id if missing (older state)
+            if pid and svc_id and not env_id:
+                env_id = await self._get_environment_id(pid)
+            else:
+                return
+        await self._set_env_vars_raw(pid, svc_id, env_id, env)
+
+    async def get_env_vars(self, resource_state: dict[str, Any]) -> dict[str, str]:
+        """Pull env vars from a Railway service."""
+        pid = resource_state.get("railway_project_id")
+        svc_id = resource_state.get("railway_service_id")
+        env_id = resource_state.get("railway_environment_id")
+        if not all([pid, svc_id]):
+            return {}
+
+        if not env_id:
+            env_id = await self._get_environment_id(pid)
+
+        data = await self._gql("""
+            query($pid: String!, $svcId: String!, $envId: String!) {
+                variables(projectId: $pid, serviceId: $svcId, environmentId: $envId)
+            }
+        """, {"pid": pid, "svcId": svc_id, "envId": env_id})
+
+        # variables returns a JSON object of key:value pairs
+        vars_data = data.get("variables", {})
+        if isinstance(vars_data, dict):
+            return vars_data
+        return {}
+
+    # ── Destroy ───────────────────────────────────────────────────────────
 
     async def destroy_service(self, name: str, resource_state: dict[str, Any]) -> None:
         """Delete a Railway service."""
         service_id = resource_state.get("railway_service_id")
         if not service_id:
             return
-
-        query = """
-        mutation($serviceId: String!) {
-            serviceDelete(id: $serviceId)
-        }
-        """
-        await self._gql(query, {"serviceId": service_id})
+        await self._gql("""
+            mutation($id: String!) { serviceDelete(id: $id) }
+        """, {"id": service_id})
 
     async def destroy_database(self, name: str, resource_state: dict[str, Any]) -> None:
         """Delete a Railway database (same as destroying a service)."""
         await self.destroy_service(name, resource_state)
 
+    # ── URL / health ──────────────────────────────────────────────────────
+
     async def get_service_url(self, resource_state: dict[str, Any]) -> str | None:
-        """Get the public URL for a Railway service."""
-        service_id = resource_state.get("railway_service_id")
-        if not service_id:
-            return None
-
-        query = """
-        query($serviceId: String!) {
-            service(id: $serviceId) {
-                domains {
-                    domain
-                }
-            }
-        }
-        """
-        try:
-            data = await self._gql(query, {"serviceId": service_id})
-            domains = data.get("service", {}).get("domains", [])
-            if domains:
-                return f"https://{domains[0]['domain']}"
-        except Exception:
-            pass
-
-        return None
-
-    async def set_env_vars(
-        self, resource_state: dict[str, Any], env: dict[str, str]
-    ) -> None:
-        """Set env vars on a Railway service."""
-        service_id = resource_state.get("railway_service_id")
-        project_id = resource_state.get("railway_project_id")
-        if not service_id or not project_id:
-            return
-
-        query = """
-        mutation($projectId: String!, $serviceId: String!, $variables: Json!) {
-            variableUpsert(input: {
-                projectId: $projectId,
-                serviceId: $serviceId,
-                variables: $variables
-            })
-        }
-        """
-        await self._gql(query, {
-            "projectId": project_id,
-            "serviceId": service_id,
-            "variables": env,
-        })
-
-    async def get_env_vars(self, resource_state: dict[str, Any]) -> dict[str, str]:
-        """Pull env vars from a Railway service."""
-        service_id = resource_state.get("railway_service_id")
-        project_id = resource_state.get("railway_project_id")
-        if not service_id or not project_id:
-            return {}
-
-        query = """
-        query($projectId: String!, $serviceId: String!) {
-            variables(projectId: $projectId, serviceId: $serviceId) {
-                key
-                value
-            }
-        }
-        """
-        data = await self._gql(query, {
-            "projectId": project_id,
-            "serviceId": service_id,
-        })
-        return {v["key"]: v["value"] for v in data.get("variables", [])}
+        return resource_state.get("url")
 
     async def health_check(self, url: str, path: str) -> bool:
         """Check service health via HTTP GET."""
@@ -357,3 +351,48 @@ class RailwayProvider(Provider):
             return result.stdout or result.stderr
         except subprocess.TimeoutExpired:
             return "Log fetch timed out"
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _generate_password(length: int = 24) -> str:
+    """Generate a secure password for database credentials."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _get_db_env(plugin: str, password: str) -> dict[str, str]:
+    """Get the environment variables needed for a database image."""
+    if plugin == "postgres":
+        return {
+            "POSTGRES_PASSWORD": password,
+            "POSTGRES_USER": "scaffold",
+            "POSTGRES_DB": "scaffold",
+            "PGDATA": "/var/lib/postgresql/data/pgdata",
+        }
+    elif plugin == "mysql":
+        return {
+            "MYSQL_ROOT_PASSWORD": password,
+            "MYSQL_DATABASE": "scaffold",
+        }
+    elif plugin == "mongodb":
+        return {
+            "MONGO_INITDB_ROOT_USERNAME": "scaffold",
+            "MONGO_INITDB_ROOT_PASSWORD": password,
+        }
+    # Redis doesn't need a password env by default
+    return {}
+
+
+def _build_db_url(plugin: str, password: str, host: str, port: int) -> str:
+    """Build a connection URL for a database."""
+    if plugin == "postgres":
+        return f"postgresql://scaffold:{password}@{host}:{port}/scaffold"
+    elif plugin == "redis":
+        return f"redis://{host}:{port}"
+    elif plugin == "mysql":
+        return f"mysql://root:{password}@{host}:{port}/scaffold"
+    elif plugin == "mongodb":
+        return f"mongodb://scaffold:{password}@{host}:{port}"
+    return f"{plugin}://{host}:{port}"
