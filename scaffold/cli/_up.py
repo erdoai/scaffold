@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 
-from scaffold.config.tokens import resolve_tokens
+from scaffold.config.tokens import ResolvedTokens, resolve_tokens
 from scaffold.manifest.loader import load_manifest
 from scaffold.manifest.resolve import get_provision_order, resolve_refs
+from scaffold.manifest.schema import Manifest
 from scaffold.providers.railway import RailwayProvider
 from scaffold.providers.vercel import VercelProvider
 from scaffold.state.store import StateStore
@@ -47,7 +49,7 @@ def run_up(
         console.print()
 
 
-def _show_plan(manifest, order, json_output):
+def _show_plan(manifest: Manifest, order: list[str], json_output: bool) -> None:
     """Show what would be provisioned."""
     plan = {
         "project": manifest.project,
@@ -71,15 +73,34 @@ def _show_plan(manifest, order, json_output):
         console.print()
 
 
-async def _provision_all(manifest, order, tokens, state: StateStore) -> dict:
+def _get_db_provider(provider_name: str, tokens: ResolvedTokens) -> Any:
+    """Get the right provider instance for a database."""
+    if provider_name == "supabase":
+        from scaffold.providers.supabase import SupabaseProvider
+        return SupabaseProvider(tokens)
+    elif provider_name == "neon":
+        from scaffold.providers.neon import NeonProvider
+        return NeonProvider(tokens)
+    else:
+        return RailwayProvider(tokens)
+
+
+async def _provision_all(
+    manifest: Manifest,
+    order: list[str],
+    tokens: ResolvedTokens,
+    state: StateStore,
+) -> dict:
     """Provision resources in topological order."""
     state.set_project(manifest.project)
     resolved_urls: dict[str, str] = {}
 
-    # Get or create Railway project
+    # Get or create Railway project (only if any resource uses Railway)
     railway_project_id = None
+    railway: RailwayProvider | None = None
     needs_railway = any(
-        s.provider == "railway" for s in list(manifest.services.values()) + list(manifest.databases.values())
+        s.provider == "railway"
+        for s in list(manifest.services.values()) + list(manifest.databases.values())
     )
     if needs_railway:
         railway = RailwayProvider(tokens)
@@ -105,10 +126,25 @@ async def _provision_all(manifest, order, tokens, state: StateStore) -> dict:
                 continue
 
             db = manifest.databases[name]
-            console.print(f"  [blue]Provisioning database: {name} ({db.plugin})[/blue]")
-            result = await railway.provision_database(
-                name, railway_project_id, db.plugin, db.extensions
-            )
+            console.print(f"  [blue]Provisioning database: {name} ({db.plugin} on {db.provider})[/blue]")
+
+            db_provider = _get_db_provider(db.provider, tokens)
+
+            if db.provider == "railway":
+                result = await db_provider.provision_database(
+                    name, railway_project_id, db.plugin, db.extensions
+                )
+            elif db.provider == "supabase":
+                result = await db_provider.provision_database(
+                    name, db.project_ref or "", db.plugin, db.extensions
+                )
+            elif db.provider == "neon":
+                result = await db_provider.provision_database(
+                    name, "", db.plugin, db.extensions
+                )
+            else:
+                raise ValueError(f"Unknown database provider: {db.provider}")
+
             state.set_resource(name, result)
             resolved_urls[name] = result.get("url", "")
 
@@ -120,8 +156,14 @@ async def _provision_all(manifest, order, tokens, state: StateStore) -> dict:
             for k, v in svc.env.items():
                 resolved_env[k] = resolve_refs(v, resolved_urls)
 
-            provider = railway if svc.provider == "railway" else vercel
-            project_id = railway_project_id if svc.provider == "railway" else None
+            if svc.provider == "railway":
+                provider = railway
+                project_id = railway_project_id
+            elif svc.provider == "vercel":
+                provider = vercel
+                project_id = None
+            else:
+                raise ValueError(f"Unknown service provider: {svc.provider}")
 
             if existing and not existing.get("needs_redeploy"):
                 console.print(f"  [dim]Service {name} already provisioned, updating env[/dim]")
@@ -133,7 +175,7 @@ async def _provision_all(manifest, order, tokens, state: StateStore) -> dict:
                 console.print(f"  [green]Creating Vercel project: {name}[/green]")
                 project_id = await vercel.create_project(f"{manifest.project}-{name}")
 
-            console.print(f"  [green]Deploying service: {name}[/green]")
+            console.print(f"  [green]Deploying service: {name} on {svc.provider}[/green]")
             result = await provider.provision_service(
                 name=name,
                 project_id=project_id,

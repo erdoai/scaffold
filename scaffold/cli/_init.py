@@ -70,7 +70,7 @@ def run_init() -> None:
 
     # ── Step 1: Railway (required) ────────────────────────────────────────
 
-    console.print("[bold blue]1/4[/bold blue] [bold]Railway[/bold] — services & databases")
+    console.print("[bold blue]1/5[/bold blue] [bold]Railway[/bold] — services & databases")
     railway_token = _setup_railway()
     if railway_token:
         collected_tokens["SCAFFOLD_RAILWAY_TOKEN"] = railway_token
@@ -78,9 +78,22 @@ def run_init() -> None:
     else:
         console.print("  [yellow]Skipped. You'll need SCAFFOLD_RAILWAY_TOKEN to deploy.[/yellow]\n")
 
-    # ── Step 2: Vercel (optional) ─────────────────────────────────────────
+    # ── Step 2: Supabase (optional) ──────────────────────────────────────
 
-    console.print("[bold blue]2/4[/bold blue] [bold]Vercel[/bold] — frontend deployments [dim](optional)[/dim]")
+    console.print("[bold blue]2/5[/bold blue] [bold]Supabase[/bold] — managed Postgres & auth [dim](optional)[/dim]")
+    if Confirm.ask("  Set up Supabase?", default=True):
+        supabase_token = _setup_supabase()
+        if supabase_token:
+            collected_tokens["SCAFFOLD_SUPABASE_TOKEN"] = supabase_token
+            console.print("  [green]Supabase connected.[/green]\n")
+        else:
+            console.print("  [yellow]Skipped.[/yellow]\n")
+    else:
+        console.print("  [dim]Skipped.[/dim]\n")
+
+    # ── Step 3: Vercel (optional) ─────────────────────────────────────────
+
+    console.print("[bold blue]3/5[/bold blue] [bold]Vercel[/bold] — frontend deployments [dim](optional)[/dim]")
     if Confirm.ask("  Set up Vercel?", default=True):
         vercel_token = _setup_vercel()
         if vercel_token:
@@ -91,9 +104,9 @@ def run_init() -> None:
     else:
         console.print("  [dim]Skipped.[/dim]\n")
 
-    # ── Step 3: Cloudflare (optional) ─────────────────────────────────────
+    # ── Step 4: Cloudflare (optional) ─────────────────────────────────────
 
-    console.print("[bold blue]3/4[/bold blue] [bold]Cloudflare[/bold] — DNS & Zero Trust [dim](optional)[/dim]")
+    console.print("[bold blue]4/5[/bold blue] [bold]Cloudflare[/bold] — DNS & Zero Trust [dim](optional)[/dim]")
     if Confirm.ask("  Set up Cloudflare?", default=True):
         cf_tokens = _setup_cloudflare()
         collected_tokens.update(cf_tokens)
@@ -104,9 +117,9 @@ def run_init() -> None:
     else:
         console.print("  [dim]Skipped.[/dim]\n")
 
-    # ── Step 4: Anthropic (optional, for `scaffold plan`) ─────────────────
+    # ── Step 5: Anthropic (optional, for `scaffold plan`) ─────────────────
 
-    console.print("[bold blue]4/4[/bold blue] [bold]Anthropic[/bold] — AI manifest generation [dim](optional)[/dim]")
+    console.print("[bold blue]5/5[/bold blue] [bold]Anthropic[/bold] — AI manifest generation [dim](optional)[/dim]")
     if Confirm.ask("  Set up Anthropic API key? (for `scaffold plan`)", default=True):
         api_key = Prompt.ask("  API key", password=True)
         if api_key:
@@ -184,6 +197,67 @@ def _read_railway_token() -> str | None:
         return data.get("user", {}).get("token")
     except Exception:
         return None
+
+
+# ── Supabase ──────────────────────────────────────────────────────────────────
+
+
+def _setup_supabase() -> str | None:
+    """Log in to Supabase and extract the access token."""
+    if not shutil.which("supabase"):
+        console.print("  [yellow]Supabase CLI not found.[/yellow]")
+        console.print("  Install: [dim]brew install supabase/tap/supabase[/dim] or [dim]npm i -g supabase[/dim]")
+        if Confirm.ask("  Paste an access token manually instead?", default=True):
+            console.print("  [dim]Generate one at: https://supabase.com/dashboard/account/tokens[/dim]")
+            return Prompt.ask("  Supabase access token", password=True) or None
+        return None
+
+    # Check if already logged in
+    if _cli_works("supabase", ["supabase", "projects", "list"]):
+        console.print("  [dim]Already logged in.[/dim]")
+        existing = _read_supabase_token()
+        if existing and Confirm.ask("  Use existing Supabase session?", default=True):
+            return existing
+
+    # Run login flow
+    console.print("  [dim]Opening browser for Supabase login...[/dim]")
+    result = subprocess.run(["supabase", "login"], timeout=120)
+
+    if result.returncode != 0:
+        console.print("  [red]Supabase login failed.[/red]")
+        if Confirm.ask("  Paste an access token manually instead?", default=True):
+            console.print("  [dim]Generate one at: https://supabase.com/dashboard/account/tokens[/dim]")
+            return Prompt.ask("  Supabase access token", password=True) or None
+        return None
+
+    token = _read_supabase_token()
+    if not token:
+        console.print("  [yellow]Could not read token from Supabase CLI config.[/yellow]")
+        if Confirm.ask("  Paste an access token manually instead?", default=True):
+            console.print("  [dim]Generate one at: https://supabase.com/dashboard/account/tokens[/dim]")
+            return Prompt.ask("  Supabase access token", password=True) or None
+    return token
+
+
+def _read_supabase_token() -> str | None:
+    """Read Supabase access token from CLI config."""
+    # supabase CLI stores credentials in ~/.supabase/access-token
+    token_path = Path.home() / ".supabase" / "access-token"
+    if token_path.exists():
+        try:
+            return token_path.read_text().strip() or None
+        except Exception:
+            pass
+
+    # Also check the newer config location
+    config_path = Path.home() / ".config" / "supabase" / "access-token"
+    if config_path.exists():
+        try:
+            return config_path.read_text().strip() or None
+        except Exception:
+            pass
+
+    return None
 
 
 # ── Vercel ────────────────────────────────────────────────────────────────────
@@ -343,6 +417,7 @@ def _save_config(
 
     token_map = {
         "SCAFFOLD_RAILWAY_TOKEN": "railway",
+        "SCAFFOLD_SUPABASE_TOKEN": "supabase",
         "SCAFFOLD_VERCEL_TOKEN": "vercel",
         "SCAFFOLD_ANTHROPIC_API_KEY": "anthropic",
     }
@@ -387,6 +462,7 @@ def _show_summary(tokens: dict[str, str], region: str, domain_suffix: str) -> No
 
     provider_status = {
         "Railway": "SCAFFOLD_RAILWAY_TOKEN" in tokens,
+        "Supabase": "SCAFFOLD_SUPABASE_TOKEN" in tokens,
         "Vercel": "SCAFFOLD_VERCEL_TOKEN" in tokens,
         "Cloudflare": "SCAFFOLD_CLOUDFLARE_API_TOKEN" in tokens,
         "Anthropic": "SCAFFOLD_ANTHROPIC_API_KEY" in tokens,

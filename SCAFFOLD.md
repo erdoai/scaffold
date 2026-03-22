@@ -23,9 +23,11 @@ services:                  # map of service name → config
 
 databases:                 # map of database name → config
   <name>:
-    provider: string       # railway (default: railway)
+    provider: string       # railway | supabase | neon (default: railway)
     plugin: string         # required — postgres | redis | mysql | mongodb
     extensions: [string]   # optional — e.g. [pgvector]
+    project_ref: string    # optional — existing Supabase project ref
+    branch: string         # optional — Neon branch name
 
 domain:                    # map of service name → domain config
   <name>:
@@ -135,6 +137,7 @@ Scaffold resolves tokens in priority order:
    - `SCAFFOLD_RAILWAY_TOKEN`
    - `SCAFFOLD_VERCEL_TOKEN`
    - `SCAFFOLD_SUPABASE_TOKEN`
+   - `SCAFFOLD_NEON_TOKEN`
    - `SCAFFOLD_CLOUDFLARE_API_TOKEN`
    - `SCAFFOLD_CLOUDFLARE_ACCOUNT_ID`
    - `SCAFFOLD_CLOUDFLARE_ZONE_ID`
@@ -225,6 +228,43 @@ databases:
   postgres:
     provider: railway
     plugin: postgres
+```
+
+### FastAPI + Supabase Postgres
+```yaml
+project: my-api
+services:
+  server:
+    provider: railway
+    runtime: python
+    source: .
+    start: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    health_check: /health
+    env:
+      DATABASE_URL: "${{postgres.url}}"
+databases:
+  postgres:
+    provider: supabase
+    plugin: postgres
+    extensions: [pgvector]
+```
+
+### FastAPI + Neon Postgres
+```yaml
+project: my-api
+services:
+  server:
+    provider: railway
+    runtime: python
+    source: .
+    start: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    env:
+      DATABASE_URL: "${{postgres.url}}"
+databases:
+  postgres:
+    provider: neon
+    plugin: postgres
+    extensions: [pgvector]
 ```
 
 ## Error Format

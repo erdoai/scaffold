@@ -21,9 +21,13 @@ class ServiceConfig(BaseModel):
 class DatabaseConfig(BaseModel):
     """A database or data store to provision."""
 
-    provider: str = "railway"
+    provider: str = "railway"  # railway | supabase | neon
     plugin: str  # postgres | redis | mysql | mongodb
     extensions: list[str] = Field(default_factory=list)
+    # Supabase-specific
+    project_ref: str | None = None  # existing supabase project ref
+    # Neon-specific
+    branch: str | None = None  # neon branch name
 
 
 class DomainConfig(BaseModel):

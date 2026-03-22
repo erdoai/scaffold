@@ -52,10 +52,22 @@ async def _destroy(
     destroyed = {}
     kept = []
 
-    railway = RailwayProvider(tokens)
-    vercel = VercelProvider(tokens) if any(
-        r.get("provider") == "vercel" for r in state.state["resources"].values()
-    ) else None
+    # Lazy-init providers only when needed
+    providers: dict = {}
+
+    def _get_provider(name: str):
+        if name not in providers:
+            if name == "railway":
+                providers[name] = RailwayProvider(tokens)
+            elif name == "vercel":
+                providers[name] = VercelProvider(tokens)
+            elif name == "supabase":
+                from scaffold.providers.supabase import SupabaseProvider
+                providers[name] = SupabaseProvider(tokens)
+            elif name == "neon":
+                from scaffold.providers.neon import NeonProvider
+                providers[name] = NeonProvider(tokens)
+        return providers[name]
 
     for name, data in list(state.state["resources"].items()):
         if target and name != target:
@@ -68,7 +80,7 @@ async def _destroy(
             continue
 
         provider_name = data.get("provider", "railway")
-        provider = railway if provider_name == "railway" else vercel
+        provider = _get_provider(provider_name)
 
         try:
             if is_db:

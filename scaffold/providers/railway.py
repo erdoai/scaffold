@@ -45,16 +45,46 @@ class RailwayProvider(Provider):
                 raise RuntimeError(f"Railway API error: {errors}")
             return data.get("data", {})
 
+    async def _get_workspace_id(self) -> str:
+        """Get the user's default workspace/team ID."""
+        query = """
+        query {
+            me {
+                id
+                teams {
+                    edges {
+                        node {
+                            id
+                            name
+                        }
+                    }
+                }
+            }
+        }
+        """
+        data = await self._gql(query)
+        me = data.get("me", {})
+
+        # Use the first team if available, otherwise use personal workspace (user ID)
+        teams = me.get("teams", {}).get("edges", [])
+        if teams:
+            return teams[0]["node"]["id"]
+
+        # Personal workspace — the user ID is the workspace ID
+        return me["id"]
+
     async def create_project(self, name: str) -> str:
         """Create a Railway project. Returns project ID."""
+        team_id = await self._get_workspace_id()
+
         query = """
-        mutation($name: String!) {
-            projectCreate(input: { name: $name }) {
+        mutation($name: String!, $teamId: String!) {
+            projectCreate(input: { name: $name, teamId: $teamId }) {
                 id
             }
         }
         """
-        data = await self._gql(query, {"name": name})
+        data = await self._gql(query, {"name": name, "teamId": team_id})
         return data["projectCreate"]["id"]
 
     async def provision_database(

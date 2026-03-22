@@ -13,6 +13,7 @@ ENV_VAR_MAP = {
     "railway": "SCAFFOLD_RAILWAY_TOKEN",
     "vercel": "SCAFFOLD_VERCEL_TOKEN",
     "supabase": "SCAFFOLD_SUPABASE_TOKEN",
+    "neon": "SCAFFOLD_NEON_TOKEN",
     "cloudflare_api_token": "SCAFFOLD_CLOUDFLARE_API_TOKEN",
     "cloudflare_account_id": "SCAFFOLD_CLOUDFLARE_ACCOUNT_ID",
     "cloudflare_zone_id": "SCAFFOLD_CLOUDFLARE_ZONE_ID",
@@ -25,6 +26,7 @@ class ResolvedTokens:
     railway: str | None = None
     vercel: str | None = None
     supabase: str | None = None
+    neon: str | None = None
     cloudflare_api_token: str | None = None
     cloudflare_account_id: str | None = None
     cloudflare_zone_id: str | None = None
@@ -80,7 +82,7 @@ def _load_global_config(tokens: ResolvedTokens) -> None:
     if not token_section:
         return
 
-    for key in ("railway", "vercel", "supabase", "anthropic"):
+    for key in ("railway", "vercel", "supabase", "neon", "anthropic"):
         if val := token_section.get(key):
             setattr(tokens, key, val)
 
