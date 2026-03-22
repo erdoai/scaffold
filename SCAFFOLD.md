@@ -49,13 +49,14 @@ References determine provision order via topological sort. Databases are provisi
 ## CLI Commands
 
 ### scaffold init
-One-time interactive setup. Creates `~/.scaffold/config.yml` with provider tokens.
+Interactive setup that auto-fetches tokens from provider CLIs via OAuth. Opens your browser for Railway, Vercel, and Cloudflare login, reads the tokens from their CLI config files, and saves everything to `~/.scaffold/config.yml` + `~/.scaffold/.env`. Falls back to manual paste if a CLI isn't installed.
 
-### scaffold plan "<description>"
-Generate scaffold.yml from natural language using Claude.
+### scaffold plan [DESCRIPTION] [--source PATH] [--output PATH]
+Scans the codebase automatically and generates scaffold.yml. Reads pyproject.toml/package.json, detects frameworks (FastAPI, Next.js, etc.), spots database imports (sqlalchemy, pgvector, redis), finds entry points and worker processes.
 ```bash
-scaffold plan "FastAPI server with Postgres and pgvector on Railway"
-# → writes scaffold.yml
+scaffold plan                  # scan cwd, generate scaffold.yml
+scaffold plan -s ../my-app     # scan a different directory
+scaffold plan "also needs redis for queues"  # scan + extra hint
 ```
 
 ### scaffold up [--json] [--dry-run] [--file PATH]

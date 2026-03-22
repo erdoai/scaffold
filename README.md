@@ -17,11 +17,11 @@ uv tool install scaffold
 ## Quickstart
 
 ```bash
-# One-time setup (saves tokens to ~/.scaffold/config.yml)
+# One-time setup — opens browser for provider OAuth, saves tokens
 scaffold init
 
-# Write a manifest (or let Claude generate one)
-scaffold plan "FastAPI server with Postgres and pgvector on Railway"
+# Scan codebase and auto-generate scaffold.yml
+scaffold plan
 
 # Deploy everything
 scaffold up
@@ -57,8 +57,8 @@ databases:
 
 | Command | Description |
 |---------|-------------|
-| `scaffold init` | One-time token setup |
-| `scaffold plan "..."` | Generate manifest from natural language |
+| `scaffold init` | Interactive provider login (Railway, Vercel, Cloudflare) |
+| `scaffold plan` | Scan codebase and auto-generate scaffold.yml |
 | `scaffold up` | Provision everything (idempotent) |
 | `scaffold dev` | Run locally with production DB |
 | `scaffold status` | Show resources + health checks |
@@ -76,8 +76,10 @@ Scaffold is designed to be used by coding agents (Claude Code, etc.):
 # Agent reads the reference doc
 cat $(scaffold docs-path)
 
-# Agent writes scaffold.yml based on what it's building
-# Agent runs scaffold up --json and gets back URLs
+# Auto-generate manifest from the codebase
+scaffold plan
+
+# Or the agent writes scaffold.yml directly, then deploys
 scaffold up --json
 ```
 

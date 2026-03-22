@@ -26,7 +26,7 @@ scaffold/
 │   │   ├── railway.py      # Railway GraphQL API
 │   │   └── vercel.py       # Vercel REST API
 │   ├── planner/
-│   │   └── agent.py        # Claude-based manifest generation
+│   │   └── agent.py        # Codebase scanner + Claude manifest generation
 │   ├── config/
 │   │   ├── tokens.py       # Token resolution (env → .scaffold/.env → global config)
 │   │   └── global_config.py

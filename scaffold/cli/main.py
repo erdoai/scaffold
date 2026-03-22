@@ -39,46 +39,10 @@ def main(
 
 @app.command()
 def init():
-    """One-time interactive setup → ~/.scaffold/config.yml."""
-    from scaffold.config.global_config import CONFIG_PATH, GlobalConfig
+    """Interactive setup — auto-fetch tokens from provider CLIs."""
+    from scaffold.cli._init import run_init
 
-    if CONFIG_PATH.exists():
-        if not typer.confirm(f"{CONFIG_PATH} already exists. Overwrite?"):
-            raise typer.Exit()
-
-    console.print("[bold]Scaffold setup[/bold]\n")
-
-    railway = typer.prompt("Railway token", default="", show_default=False)
-    vercel = typer.prompt("Vercel token (optional)", default="", show_default=False)
-    anthropic = typer.prompt("Anthropic API key (optional)", default="", show_default=False)
-    cf_token = typer.prompt("Cloudflare API token (optional)", default="", show_default=False)
-    cf_account = typer.prompt("Cloudflare account ID (optional)", default="", show_default=False)
-    cf_zone = typer.prompt("Cloudflare zone ID (optional)", default="", show_default=False)
-    region = typer.prompt("Default region", default="us-west1")
-    domain_suffix = typer.prompt("Domain suffix (e.g. erdo.ai)", default="", show_default=False)
-
-    tokens: dict = {}
-    if railway:
-        tokens["railway"] = railway
-    if vercel:
-        tokens["vercel"] = vercel
-    if anthropic:
-        tokens["anthropic"] = anthropic
-    if cf_token or cf_account or cf_zone:
-        tokens["cloudflare"] = {}
-        if cf_token:
-            tokens["cloudflare"]["api_token"] = cf_token
-        if cf_account:
-            tokens["cloudflare"]["account_id"] = cf_account
-        if cf_zone:
-            tokens["cloudflare"]["zone_id"] = cf_zone
-
-    defaults: dict = {"region": region}
-    if domain_suffix:
-        defaults["domain_suffix"] = domain_suffix
-
-    path = GlobalConfig.save_initial(tokens, defaults)
-    console.print(f"\n[green]Config saved to {path}[/green]")
+    run_init()
 
 
 # ── plan ──────────────────────────────────────────────────────────────────────
@@ -86,14 +50,16 @@ def init():
 
 @app.command()
 def plan(
-    description: str = typer.Argument(..., help="Natural language description of your stack"),
+    description: str = typer.Argument(None, help="Optional extra context (codebase is scanned automatically)"),
+    source: Path = typer.Option(None, "--source", "-s", help="Project directory to scan (default: cwd)"),
     output: Path = typer.Option(Path("scaffold.yml"), "--output", "-o", help="Output path"),
 ):
-    """Generate scaffold.yml from a natural language description using Claude."""
+    """Scan the codebase and generate scaffold.yml automatically."""
     from scaffold.planner.agent import generate_manifest
 
-    console.print(f"[dim]Generating manifest from: {description}[/dim]")
-    manifest_yaml = generate_manifest(description)
+    project_dir = source or Path.cwd()
+    console.print(f"[dim]Scanning {project_dir} ...[/dim]")
+    manifest_yaml = generate_manifest(project_dir=project_dir, description=description)
 
     output.write_text(manifest_yaml)
     console.print(f"[green]Manifest written to {output}[/green]")
