@@ -19,15 +19,54 @@ console = Console()
 def run_down(
     service: str | None = None,
     keep_db: bool = False,
+    yes: bool = False,
     json_output: bool = False,
 ) -> None:
     """Tear down resources."""
+    from rich.prompt import Confirm
+
     project_dir = Path.cwd()
     state = StateStore(project_dir)
 
     if not state.is_provisioned:
         console.print("[yellow]Nothing provisioned.[/yellow]")
         return
+
+    # Show what will be destroyed and confirm
+    project = state.state.get("project", "?")
+    to_destroy: list[str] = []
+    to_keep: list[str] = []
+
+    for name, data in state.state["resources"].items():
+        if service and name != service:
+            to_keep.append(name)
+            continue
+        is_db = data.get("plugin") is not None
+        if is_db and keep_db:
+            to_keep.append(name)
+        else:
+            to_destroy.append(name)
+
+    if not to_destroy:
+        console.print("[yellow]Nothing to destroy.[/yellow]")
+        return
+
+    if not yes:
+        console.print(f"\n[bold red]This will destroy the following resources in '{project}':[/bold red]\n")
+        for name in to_destroy:
+            data = state.state["resources"][name]
+            provider = data.get("provider", "?")
+            is_db = data.get("plugin") is not None
+            label = f"db ({data['plugin']})" if is_db else "service"
+            console.print(f"  [red]✗[/red] {name} — {label} on {provider}")
+        if to_keep:
+            for name in to_keep:
+                console.print(f"  [dim]  {name} — kept[/dim]")
+        console.print()
+
+        if not Confirm.ask("Are you sure?", default=False):
+            console.print("[dim]Aborted.[/dim]")
+            return
 
     tokens = resolve_tokens(project_dir)
     result = asyncio.run(_destroy(state, tokens, service, keep_db))

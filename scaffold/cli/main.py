@@ -88,12 +88,13 @@ def up(
 def down(
     service: str = typer.Argument(None, help="Specific service to tear down (all if omitted)"),
     keep_db: bool = typer.Option(False, "--keep-db", help="Preserve databases"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Tear down provisioned resources."""
     from scaffold.cli._down import run_down
 
-    run_down(service, keep_db=keep_db, json_output=json_output)
+    run_down(service, keep_db=keep_db, yes=yes, json_output=json_output)
 
 
 # ── dev ───────────────────────────────────────────────────────────────────────
