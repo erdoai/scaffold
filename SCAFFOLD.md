@@ -267,6 +267,35 @@ databases:
     extensions: [pgvector]
 ```
 
+## Auto-Generated Defaults — scaffold-defaults.yml
+
+Create a `scaffold-defaults.yml` in your project root (committed to git) to auto-generate secrets and other values that don't exist yet in `.scaffold/.env`. On every `scaffold up`, missing values are generated locally and appended to `.scaffold/.env`, then pushed to providers via the normal `${{env.VAR}}` resolution.
+
+```yaml
+auto:
+  SESSION_SECRET:
+    type: secret
+    length: 32
+  WORKER_API_KEY:
+    type: secret
+    length: 24
+  INSTANCE_ID:
+    type: uuid
+```
+
+### Supported types
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| `secret` | `length` (default: 32) | Cryptographic hex string |
+| `uuid` | — | Random UUID v4 |
+| `string` | `default` (required) | Literal default value |
+
+**Key behavior:**
+- Existing values in `.scaffold/.env` are never overwritten
+- Generated secrets never leave the machine — they're written locally and pushed to providers
+- The file is idempotent: running `scaffold up` twice won't regenerate anything
+
 ## Error Format
 
 All errors are returned as structured JSON when `--json` is used:

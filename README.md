@@ -80,6 +80,22 @@ Database providers: **Railway** (default, provisions in-project), **Supabase** (
 
 All commands support `--json` for machine-readable output.
 
+## Auto-Generated Secrets
+
+Add a `scaffold-defaults.yml` to auto-generate secrets that don't exist yet:
+
+```yaml
+auto:
+  SESSION_SECRET:
+    type: secret
+    length: 32
+  WORKER_API_KEY:
+    type: secret
+    length: 24
+```
+
+On `scaffold up`, missing values are generated locally into `.scaffold/.env` and pushed to providers. Existing values are never overwritten. Supports `secret` (hex), `uuid`, and `string` (literal default) types.
+
 ## Agent Integration
 
 Scaffold is designed to be used by coding agents (Claude Code, etc.):

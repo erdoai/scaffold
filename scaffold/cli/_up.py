@@ -11,6 +11,7 @@ from typing import Any
 from rich.console import Console
 
 from scaffold.config.tokens import ResolvedTokens, resolve_tokens
+from scaffold.defaults import apply_defaults
 from scaffold.manifest.loader import load_manifest
 from scaffold.manifest.resolve import get_provision_order, resolve_refs
 from scaffold.manifest.schema import Manifest
@@ -33,6 +34,9 @@ def run_up(
     order = get_provision_order(manifest)
     tokens = resolve_tokens(project_dir)
     state = StateStore(project_dir)
+
+    # Auto-generate missing defaults (secrets, etc.) before provisioning
+    apply_defaults(project_dir)
 
     if dry_run:
         _show_plan(manifest, order, json_output)
