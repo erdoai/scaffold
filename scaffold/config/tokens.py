@@ -1,7 +1,8 @@
-"""Token resolution: env vars → .scaffold/.env → ~/.scaffold/config.yml."""
+"""Token resolution: env vars → .scaffold/.env → ~/.scaffold/config.yml → CLI configs."""
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,21 +38,24 @@ class ResolvedTokens:
         val = getattr(self, key, None)
         if not val:
             env_var = ENV_VAR_MAP.get(key, f"SCAFFOLD_{key.upper()}")
-            raise ValueError(
-                f"Token '{key}' not found. Set {env_var} in environment, "
-                f".scaffold/.env, or ~/.scaffold/config.yml"
-            )
+            hints = [f"Set {env_var} in environment, .scaffold/.env, or ~/.scaffold/config.yml"]
+            if key == "railway":
+                hints.append("Or run `railway login` to authenticate the Railway CLI")
+            raise ValueError(f"Token '{key}' not found. {' '.join(hints)}")
         return val
 
 
 def resolve_tokens(project_dir: Path | None = None) -> ResolvedTokens:
-    """Resolve tokens from env vars → .scaffold/.env → ~/.scaffold/config.yml.
+    """Resolve tokens from env vars → .scaffold/.env → ~/.scaffold/config.yml → CLI configs.
 
     Higher priority sources override lower ones.
     """
     tokens = ResolvedTokens()
 
-    # Priority 3 (lowest): global config
+    # Priority 4 (lowest): provider CLI configs (Railway, Vercel, etc.)
+    _load_cli_tokens(tokens)
+
+    # Priority 3: global config
     _load_global_config(tokens)
 
     # Priority 2: project .scaffold/.env
@@ -114,3 +118,23 @@ def _load_env_vars(tokens: ResolvedTokens) -> None:
     for attr, env_var in ENV_VAR_MAP.items():
         if val := os.environ.get(env_var):
             setattr(tokens, attr, val)
+
+
+def _load_cli_tokens(tokens: ResolvedTokens) -> None:
+    """Load tokens from provider CLI configs (lowest priority fallback).
+
+    Supports:
+    - Railway CLI: ~/.railway/config.json → user.token
+    """
+    # Railway CLI session token
+    if not tokens.railway:
+        railway_config = Path.home() / ".railway" / "config.json"
+        if railway_config.exists():
+            try:
+                with open(railway_config) as f:
+                    config = json.load(f)
+                token = config.get("user", {}).get("token")
+                if token:
+                    tokens.railway = token
+            except Exception:
+                pass
