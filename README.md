@@ -96,6 +96,19 @@ auto:
 
 On `scaffold up`, missing values are generated locally into `.scaffold/.env` and pushed to providers. Existing values are never overwritten. Supports `secret` (hex), `uuid`, and `string` (literal default) types.
 
+## Authentication
+
+If you've already run `railway login`, scaffold works immediately — no extra token configuration needed. Scaffold auto-detects the Railway CLI session token from `~/.railway/config.json`.
+
+Token resolution priority (highest wins):
+
+1. Environment variables (`SCAFFOLD_RAILWAY_TOKEN`, etc.)
+2. Project `.scaffold/.env`
+3. Global `~/.scaffold/config.yml`
+4. Provider CLI configs (`~/.railway/config.json`)
+
+`scaffold init` is the easiest way to set everything up — it runs the provider CLI login and saves tokens for you.
+
 ## Agent Integration
 
 Scaffold is designed to be used by coding agents (Claude Code, etc.):
