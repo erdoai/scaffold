@@ -76,6 +76,7 @@ Database providers: **Railway** (default, provisions in-project), **Supabase** (
 | `scaffold status` | Show resources + health checks |
 | `scaffold down` | Tear down resources |
 | `scaffold env pull` | Pull env vars from providers |
+| `scaffold redeploy` | Restart services with latest code |
 | `scaffold logs <svc>` | Stream service logs |
 
 All commands support `--json` for machine-readable output.

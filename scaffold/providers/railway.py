@@ -359,6 +359,25 @@ class RailwayProvider(Provider):
             return vars_data
         return {}
 
+    # ── Redeploy ──────────────────────────────────────────────────────────
+
+    async def redeploy_service(self, resource_state: dict[str, Any]) -> None:
+        """Trigger a redeploy on an existing Railway service."""
+        svc_id = resource_state.get("railway_service_id")
+        env_id = resource_state.get("railway_environment_id")
+        pid = resource_state.get("railway_project_id")
+        if not svc_id:
+            return
+        if not env_id and pid:
+            env_id = await self._get_environment_id(pid)
+        if not env_id:
+            return
+        await self._gql("""
+            mutation($svcId: String!, $envId: String!) {
+                serviceInstanceRedeploy(serviceId: $svcId, environmentId: $envId)
+            }
+        """, {"svcId": svc_id, "envId": env_id})
+
     # ── Destroy ───────────────────────────────────────────────────────────
 
     async def destroy_service(self, name: str, resource_state: dict[str, Any]) -> None:

@@ -160,6 +160,63 @@ def logs(
     run_logs(service, follow=follow)
 
 
+# ── redeploy ─────────────────────────────────────────────────────────────────
+
+
+@app.command()
+def redeploy(
+    service: str = typer.Argument(None, help="Service name to redeploy (all services if omitted)"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+):
+    """Trigger a redeploy on provisioned services (restarts with latest code)."""
+    import asyncio
+    import json
+
+    from scaffold.config.tokens import resolve_tokens
+    from scaffold.providers.railway import RailwayProvider
+    from scaffold.state.store import StateStore
+
+    project_dir = Path.cwd()
+    tokens = resolve_tokens(project_dir)
+    state = StateStore(project_dir)
+    railway = RailwayProvider(tokens)
+
+    services = []
+    for name, data in state.state.get("resources", {}).items():
+        if data.get("provider") != "railway" or not data.get("railway_service_id"):
+            continue
+        # Skip databases
+        if data.get("plugin"):
+            continue
+        if service and name != service:
+            continue
+        services.append((name, data))
+
+    if not services:
+        msg = f"No service '{service}' found" if service else "No services found"
+        err_console.print(f"[red]{msg}[/red]")
+        raise typer.Exit(1)
+
+    async def _redeploy():
+        results = {}
+        for name, data in services:
+            try:
+                await railway.redeploy_service(data)
+                results[name] = "redeployed"
+                if not json_output:
+                    console.print(f"  [green]Redeployed:[/green] {name}")
+            except Exception as e:
+                results[name] = f"failed: {e}"
+                if not json_output:
+                    console.print(f"  [red]Failed:[/red] {name} — {e}")
+        return results
+
+    results = asyncio.run(_redeploy())
+
+    if json_output:
+        console.print(json.dumps(results, indent=2))
+
+
 # ── docs-path ─────────────────────────────────────────────────────────────────
 
 
