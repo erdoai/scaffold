@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +93,14 @@ async def _provision_all(
     state: StateStore,
 ) -> dict:
     """Provision resources in topological order."""
+    # Load .scaffold/.env into os.environ so ${{env.VAR}} refs resolve
+    scaffold_env = Path.cwd() / ".scaffold" / ".env"
+    if scaffold_env.exists():
+        from dotenv import dotenv_values
+        for k, v in dotenv_values(scaffold_env).items():
+            if v is not None:
+                os.environ.setdefault(k, v)
+
     state.set_project(manifest.project)
     resolved_urls: dict[str, str] = {}
 
