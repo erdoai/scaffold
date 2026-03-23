@@ -37,6 +37,7 @@ class StateStore:
     def save(self) -> None:
         """Persist state to disk."""
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_gitignore(self.project_dir)
         with open(self.state_path, "w") as f:
             json.dump(self.state, f, indent=2)
 
@@ -76,3 +77,26 @@ class StateStore:
         self._state = {"project": None, "provisioned_at": None, "resources": {}}
         if self.state_path.exists():
             self.state_path.unlink()
+
+
+GITIGNORE_ENTRY = ".scaffold/.env"
+
+
+def _ensure_gitignore(project_dir: Path) -> None:
+    """Ensure .scaffold/.env is in .gitignore to prevent secret leaks."""
+    gitignore = project_dir / ".gitignore"
+
+    if gitignore.exists():
+        content = gitignore.read_text()
+        # Check if already covered (exact line or broader .scaffold/ pattern)
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped in (GITIGNORE_ENTRY, ".scaffold/", ".scaffold/*", ".scaffold"):
+                return
+        # Append
+        if not content.endswith("\n"):
+            content += "\n"
+        content += f"\n# scaffold secrets\n{GITIGNORE_ENTRY}\n"
+        gitignore.write_text(content)
+    else:
+        gitignore.write_text(f"# scaffold secrets\n{GITIGNORE_ENTRY}\n")
