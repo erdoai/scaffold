@@ -1,16 +1,65 @@
-MIT License
+Fair Core License, Version 1.0, Apache 2.0 Future License
 
 Copyright (c) 2026 Erdo
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Use Limitation
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The Software and associated documentation files (the "Software") may only be
+used in production, if such use is in accordance with the Use Limitation.
+
+The "Use Limitation" is defined as using the Software for the purpose of
+creating a product or service that competes with the Software or any other
+product or service provided by the Licensor.
+
+A product or service is considered "competing" if it provides substantially
+similar functionality to the Software and is offered to third parties as a
+managed service, hosted service, or software-as-a-service.
+
+License Grant
+
+Subject to the Use Limitation, the Licensor hereby grants you a non-exclusive,
+worldwide, royalty-free, non-sublicensable, non-transferable license to use,
+copy, modify, create derivative works, and redistribute the Software, in each
+case subject to the limitations and conditions set forth herein.
+
+You may add your own copyright notices to modifications you make to the
+Software. You may provide additional or different license terms and conditions
+for use, reproduction, or distribution of your modifications.
+
+Conditions
+
+Redistribution in source or binary form, with or without modification, is
+permitted provided that the following conditions are met:
+
+1. Redistributions must reproduce the above copyright notice, this license,
+   and the following disclaimer in the documentation and/or other materials
+   provided with the distribution.
+
+2. You may not alter, remove, or obscure any licensing, copyright, or other
+   notices of the Licensor in the Software.
+
+3. You may not use the Licensor's trademarks, service marks, or trade names
+   in a way that suggests your product or service is endorsed by the Licensor.
+
+4. You may not move, change, disable, or circumvent the license key
+   functionality in the Software, and you may not remove or obscure any
+   functionality in the Software that is protected by the license key.
+
+Termination
+
+This license will terminate automatically if you violate any of these
+restrictions and may be terminated by the Licensor at any time for any reason.
+Upon termination, you must destroy all copies of the Software in your
+possession.
+
+Future License
+
+On the second anniversary of the date of the initial release of a specific
+version of the Software ("Release Date"), or such earlier date as the Licensor
+may specify, the Licensor hereby grants you a license to that version of the
+Software under the terms of the Apache License, Version 2.0.
+
+No Warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,3 +68,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+SPDX-License-Identifier: FCL-1.0-ALv2

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Deploy any service stack to Railway/Vercel — zero-touch, agent-friendly"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "FCL-1.0-ALv2"
 dependencies = [
     "typer>=0.12",
     "rich>=13.0",

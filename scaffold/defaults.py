@@ -1,4 +1,21 @@
-"""Auto-generate default values (secrets, UUIDs) from scaffold-defaults.yml."""
+"""Auto-generate default values and check required keys from scaffold.config.yml.
+
+Supports both the new scaffold.config.yml and legacy scaffold-defaults.yml.
+
+scaffold.config.yml format:
+    auto:
+      SESSION_SECRET:
+        type: secret
+        length: 32
+    required:
+      ANTHROPIC_API_KEY:
+        description: "Claude API key"
+        url: https://console.anthropic.com/settings/keys
+    optional:
+      DEVBOT_URL:
+        description: "Devbot server URL"
+        default: ""
+"""
 
 from __future__ import annotations
 
@@ -9,49 +26,37 @@ from typing import Any
 
 import yaml
 from rich.console import Console
+from rich.prompt import Prompt
 
-DEFAULTS_NAMES = ["scaffold-defaults.yml", "scaffold-defaults.yaml"]
+CONFIG_NAMES = [
+    "scaffold.config.yml",
+    "scaffold.config.yaml",
+    "scaffold-defaults.yml",
+    "scaffold-defaults.yaml",
+]
 
 err_console = Console(stderr=True)
 
 
-def find_defaults_file(project_dir: Path | None = None) -> Path | None:
-    """Find scaffold-defaults.yml if it exists. Returns None if not found."""
+def find_config_file(project_dir: Path | None = None) -> Path | None:
+    """Find scaffold.config.yml (or legacy scaffold-defaults.yml)."""
     search_dir = project_dir or Path.cwd()
-    for name in DEFAULTS_NAMES:
+    for name in CONFIG_NAMES:
         path = search_dir / name
         if path.exists():
             return path
     return None
 
 
-def load_defaults(path: Path) -> dict[str, dict[str, Any]]:
-    """Load and validate scaffold-defaults.yml.
-
-    Expected format:
-        auto:
-          SESSION_SECRET:
-            type: secret
-            length: 32
-          WORKER_API_KEY:
-            type: secret
-            length: 24
-          INSTANCE_ID:
-            type: uuid
-
-    Returns the 'auto' dict, or empty dict if missing.
-    """
+def load_config(path: Path) -> dict[str, dict[str, Any]]:
+    """Load scaffold.config.yml. Returns the full parsed dict."""
     with open(path) as f:
         raw = yaml.safe_load(f)
 
     if not raw or not isinstance(raw, dict):
         return {}
 
-    auto = raw.get("auto", {})
-    if not isinstance(auto, dict):
-        return {}
-
-    return auto
+    return raw
 
 
 def generate_value(spec: dict[str, Any]) -> str:
@@ -74,46 +79,118 @@ def generate_value(spec: dict[str, Any]) -> str:
     raise ValueError(f"Unknown default type: {typ}")
 
 
-def apply_defaults(project_dir: Path | None = None) -> dict[str, str]:
-    """Check scaffold-defaults.yml against .scaffold/.env and generate missing values.
-
-    Returns dict of newly generated key-value pairs (empty if nothing new).
-    """
-    project_dir = project_dir or Path.cwd()
-    defaults_path = find_defaults_file(project_dir)
-    if defaults_path is None:
-        return {}
-
-    auto = load_defaults(defaults_path)
-    if not auto:
-        return {}
-
-    # Load existing .scaffold/.env values
+def _load_existing_env(project_dir: Path) -> dict[str, str | None]:
+    """Load existing .scaffold/.env values."""
     env_path = project_dir / ".scaffold" / ".env"
-    existing: dict[str, str | None] = {}
-    if env_path.exists():
-        from dotenv import dotenv_values
-        existing = dotenv_values(env_path)
-
-    # Generate missing values
-    generated: dict[str, str] = {}
-    for key, spec in auto.items():
-        if not isinstance(spec, dict):
-            continue
-        if existing.get(key):
-            continue  # already set, skip
-        generated[key] = generate_value(spec)
-
-    if not generated:
+    if not env_path.exists():
         return {}
+    from dotenv import dotenv_values
+    return dotenv_values(env_path)
 
-    # Append to .scaffold/.env
+
+def _append_to_env(project_dir: Path, values: dict[str, str]) -> None:
+    """Append key=value pairs to .scaffold/.env."""
+    if not values:
+        return
+    env_path = project_dir / ".scaffold" / ".env"
     env_path.parent.mkdir(parents=True, exist_ok=True)
     with open(env_path, "a") as f:
-        for k, v in generated.items():
+        for k, v in values.items():
             f.write(f"{k}={v}\n")
 
-    for k in generated:
-        err_console.print(f"  [dim]Generated default: {k}[/dim]")
 
-    return generated
+def apply_defaults(project_dir: Path | None = None) -> dict[str, str]:
+    """Process scaffold.config.yml: auto-generate secrets, prompt for required keys.
+
+    Returns dict of all newly set key-value pairs.
+    """
+    project_dir = project_dir or Path.cwd()
+    config_path = find_config_file(project_dir)
+    if config_path is None:
+        return {}
+
+    config = load_config(config_path)
+    if not config:
+        return {}
+
+    existing = _load_existing_env(project_dir)
+    all_new: dict[str, str] = {}
+
+    # 1. Auto-generate secrets/UUIDs
+    auto = config.get("auto", {})
+    if isinstance(auto, dict):
+        for key, spec in auto.items():
+            if not isinstance(spec, dict):
+                continue
+            if existing.get(key):
+                continue
+            value = generate_value(spec)
+            all_new[key] = value
+            err_console.print(f"  [dim]Generated: {key}[/dim]")
+
+    # 2. Check required keys — prompt if missing and interactive
+    required = config.get("required", {})
+    if isinstance(required, dict):
+        missing_required = []
+        for key, spec in required.items():
+            if not isinstance(spec, dict):
+                continue
+            if existing.get(key) or all_new.get(key):
+                continue
+            missing_required.append((key, spec))
+
+        if missing_required:
+            err_console.print()
+            err_console.print(
+                "[bold]Required keys missing[/bold] — "
+                "set these in .scaffold/.env or enter them now:"
+            )
+            for key, spec in missing_required:
+                desc = spec.get("description", key)
+                url = spec.get("url", "")
+                label = f"  {desc}"
+                if url:
+                    label += f" ({url})"
+                value = Prompt.ask(label, console=err_console)
+                if value:
+                    all_new[key] = value
+                    err_console.print(f"  [green]Set: {key}[/green]")
+                else:
+                    err_console.print(
+                        f"  [yellow]Skipped: {key} — "
+                        f"add to .scaffold/.env before deploying[/yellow]"
+                    )
+
+    # 3. Check optional keys — just note what's available
+    optional = config.get("optional", {})
+    if isinstance(optional, dict):
+        missing_optional = []
+        for key, spec in optional.items():
+            if not isinstance(spec, dict):
+                continue
+            if existing.get(key) or all_new.get(key):
+                continue
+            # Apply defaults for optional keys that have them
+            default = spec.get("default")
+            if default:
+                all_new[key] = str(default)
+                err_console.print(f"  [dim]Default: {key}={default}[/dim]")
+            else:
+                missing_optional.append((key, spec))
+
+        if missing_optional:
+            err_console.print()
+            err_console.print("[dim]Optional keys (not set):[/dim]")
+            for key, spec in missing_optional:
+                desc = spec.get("description", key)
+                err_console.print(f"  [dim]  {key} — {desc}[/dim]")
+
+    # Write all new values to .scaffold/.env
+    _append_to_env(project_dir, all_new)
+
+    return all_new
+
+
+# Backwards compat aliases
+find_defaults_file = find_config_file
+load_defaults = load_config
