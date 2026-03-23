@@ -23,12 +23,14 @@ scaffold init
 # Scan codebase and auto-generate scaffold.yml
 scaffold plan
 
-# Deploy everything
+# Deploy everything — connects to GitHub for auto-deploy on push
 scaffold up
 
 # Run locally with the same production DB
 scaffold dev
 ```
+
+`scaffold up` automatically connects Railway services to your GitHub repo. Every `git push` triggers a rebuild. Use `scaffold redeploy` to force a rebuild manually.
 
 ## scaffold.yml
 
@@ -76,7 +78,7 @@ Database providers: **Railway** (default, provisions in-project), **Supabase** (
 | `scaffold status` | Show resources + health checks |
 | `scaffold down` | Tear down resources |
 | `scaffold env pull` | Pull env vars from providers |
-| `scaffold redeploy` | Restart services with latest code |
+| `scaffold redeploy` | Trigger a rebuild and restart |
 | `scaffold logs <svc>` | Stream service logs |
 
 All commands support `--json` for machine-readable output.

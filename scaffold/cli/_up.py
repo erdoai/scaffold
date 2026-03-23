@@ -252,6 +252,15 @@ async def _provision_all(
                     await provider.update_start_command(
                         existing, resolved_start
                     )
+                # Connect to GitHub if not already connected
+                if svc.provider == "railway" and hasattr(provider, "connect_repo"):
+                    from scaffold.providers.railway import _detect_github_repo
+                    repo = _detect_github_repo()
+                    if repo:
+                        try:
+                            await provider.connect_repo(existing, repo)
+                        except Exception:
+                            pass  # non-fatal
                 resolved_urls[name] = existing.get("url", "")
                 continue
 

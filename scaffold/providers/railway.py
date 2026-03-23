@@ -210,6 +210,18 @@ class RailwayProvider(Provider):
 
         env_id = await self._get_environment_id(project_id)
 
+        # Connect to GitHub repo if available (enables auto-deploy on push)
+        repo = _detect_github_repo()
+        if repo:
+            try:
+                await self._gql("""
+                    mutation($id: String!, $repo: String!, $branch: String!) {
+                        serviceConnect(id: $id, input: { repo: $repo, branch: $branch })
+                    }
+                """, {"id": service_id, "repo": repo, "branch": "main"})
+            except Exception:
+                pass  # non-fatal — service works without GitHub connection
+
         # Set start command via serviceInstanceUpdate (not serviceUpdate)
         if start_command:
             await self._gql("""
@@ -361,6 +373,17 @@ class RailwayProvider(Provider):
 
     # ── Redeploy ──────────────────────────────────────────────────────────
 
+    async def connect_repo(self, resource_state: dict[str, Any], repo: str, branch: str = "main") -> None:
+        """Connect a Railway service to a GitHub repo for auto-deploy."""
+        svc_id = resource_state.get("railway_service_id")
+        if not svc_id:
+            return
+        await self._gql("""
+            mutation($id: String!, $repo: String!, $branch: String!) {
+                serviceConnect(id: $id, input: { repo: $repo, branch: $branch })
+            }
+        """, {"id": svc_id, "repo": repo, "branch": branch})
+
     async def redeploy_service(self, resource_state: dict[str, Any]) -> None:
         """Trigger a redeploy on an existing Railway service."""
         svc_id = resource_state.get("railway_service_id")
@@ -457,6 +480,30 @@ def _get_db_env(plugin: str, password: str) -> dict[str, str]:
         }
     # Redis doesn't need a password env by default
     return {}
+
+
+def _detect_github_repo() -> str | None:
+    """Detect the GitHub repo (owner/name) from the local git remote."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5,
+        )
+        url = result.stdout.strip()
+        if not url:
+            return None
+        # Parse: https://github.com/owner/repo.git or git@github.com:owner/repo.git
+        if "github.com" not in url:
+            return None
+        if url.startswith("git@"):
+            # git@github.com:owner/repo.git
+            path = url.split(":")[-1]
+        else:
+            # https://github.com/owner/repo.git
+            path = url.split("github.com/")[-1]
+        return path.removesuffix(".git")
+    except Exception:
+        return None
 
 
 def _build_db_url(plugin: str, password: str, host: str, port: int) -> str:
