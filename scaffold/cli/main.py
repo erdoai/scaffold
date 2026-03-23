@@ -74,11 +74,12 @@ def up(
     manifest_path: Path = typer.Option(None, "--file", "-f", help="Path to scaffold.yml"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show execution plan without provisioning"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    apply_auth: bool = typer.Option(False, "--apply", help="Write auth middleware files (for auth.mode: middleware)"),
 ):
     """Provision everything defined in scaffold.yml (idempotent)."""
     from scaffold.cli._up import run_up
 
-    run_up(manifest_path, dry_run=dry_run, json_output=json_output)
+    run_up(manifest_path, dry_run=dry_run, json_output=json_output, apply_auth=apply_auth)
 
 
 # ── down ──────────────────────────────────────────────────────────────────────

@@ -108,8 +108,15 @@ async def _destroy(
                 providers[name] = NeonProvider(tokens)
         return providers[name]
 
+    # If targeting a specific service, also destroy its auth proxy
+    targets = {target} if target else None
+    if target:
+        proxy_name = f"{target}-auth-proxy"
+        if proxy_name in state.state["resources"]:
+            targets.add(proxy_name)
+
     for name, data in list(state.state["resources"].items()):
-        if target and name != target:
+        if targets and name not in targets:
             kept.append(name)
             continue
 

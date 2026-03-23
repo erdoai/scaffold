@@ -11,6 +11,7 @@ from rich.table import Table
 
 from scaffold.config.tokens import resolve_tokens
 from scaffold.manifest.loader import load_manifest
+from scaffold.manifest.schema import AuthConfig
 from scaffold.providers.railway import RailwayProvider
 from scaffold.state.store import StateStore
 
@@ -29,19 +30,34 @@ def run_status(json_output: bool = False) -> None:
             console.print("[yellow]Nothing provisioned. Run `scaffold up` first.[/yellow]")
         return
 
-    # Try to load manifest for health check paths
+    # Try to load manifest for health check paths and auth config
     health_checks: dict[str, str] = {}
+    auth_domains: dict[str, AuthConfig] = {}
     try:
         manifest = load_manifest()
         for name, svc in manifest.services.items():
             if svc.health_check:
                 health_checks[name] = svc.health_check
+        for name, domain in manifest.domain.items():
+            auth = domain.auth
+            if isinstance(auth, AuthConfig) and auth.mode != "none":
+                auth_domains[name] = auth
     except Exception:
         pass
 
     result = asyncio.run(_check_status(state, health_checks))
 
     if json_output:
+        # Include auth info in JSON output
+        if auth_domains:
+            result["auth"] = {
+                name: {
+                    "mode": auth.mode,
+                    "allowed_emails": auth.allowed_emails,
+                    "proxy": f"{name}-auth-proxy",
+                }
+                for name, auth in auth_domains.items()
+            }
         console.print(json.dumps(result, indent=2))
     else:
         table = Table(title=f"Project: {state.state.get('project', '?')}")
@@ -53,14 +69,30 @@ def run_status(json_output: bool = False) -> None:
         for name, info in result["resources"].items():
             health = info.get("health", "—")
             health_style = "green" if health == "ok" else "red" if health == "fail" else "dim"
+            # Mark auth sidecars
+            display_name = name
+            res_data = state.get_resource(name) or {}
+            if res_data.get("type") == "auth-sidecar":
+                display_name = f"{name} (auth)"
             table.add_row(
-                name,
+                display_name,
                 info.get("provider", "—"),
                 info.get("url", "—"),
                 f"[{health_style}]{health}[/{health_style}]",
             )
 
         console.print(table)
+
+        # Show auth summary
+        if auth_domains:
+            console.print("\n[bold]Auth:[/bold]")
+            for name, auth in auth_domains.items():
+                emails = ", ".join(auth.allowed_emails) if auth.allowed_emails else "*"
+                proxy_url = state.get_url(f"{name}-auth-proxy") or "not deployed"
+                console.print(f"  {name}: [yellow]{auth.mode}[/yellow] — {emails}")
+                console.print(f"    proxy: {proxy_url}")
+            console.print(f"  [dim]JWT secret: see .scaffold/.env (AUTH_JWT_SECRET)[/dim]")
+
         console.print(f"\n[dim]Provisioned at: {state.state.get('provisioned_at', '?')}[/dim]")
 
 

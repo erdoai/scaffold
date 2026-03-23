@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 plan = ["anthropic>=0.40"]
+auth = ["starlette>=0.40", "uvicorn>=0.30"]
 
 [project.scripts]
 scaffold = "scaffold.cli.main:app"

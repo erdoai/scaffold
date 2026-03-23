@@ -236,6 +236,39 @@ class RailwayProvider(Provider):
             "url": url,
         }
 
+    async def provision_image_service(
+        self,
+        name: str,
+        project_id: str,
+        image: str,
+        env: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Deploy a service from a Docker image (e.g. auth sidecar)."""
+        data = await self._gql("""
+            mutation($projectId: String!, $name: String!, $image: String!) {
+                serviceCreate(input: {
+                    projectId: $projectId, name: $name, source: { image: $image }
+                }) { id }
+            }
+        """, {"projectId": project_id, "name": name, "image": image})
+        service_id = data["serviceCreate"]["id"]
+
+        env_id = await self._get_environment_id(project_id)
+
+        if env:
+            await self._set_env_vars_raw(project_id, service_id, env_id, env)
+
+        url = await self._create_service_domain(service_id, env_id)
+
+        return {
+            "provider": "railway",
+            "railway_project_id": project_id,
+            "railway_service_id": service_id,
+            "railway_environment_id": env_id,
+            "url": url,
+            "type": "auth-sidecar",
+        }
+
     async def _create_service_domain(self, service_id: str, env_id: str) -> str | None:
         """Create a Railway-generated domain for a service."""
         try:

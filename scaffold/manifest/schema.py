@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class AuthConfig(BaseModel):
+    """Authentication config for a service."""
+
+    mode: str = "none"  # none | sidecar | middleware
+    allowed_emails: list[str] = Field(default_factory=list)  # ["*@co.com", "user@x.com"]
+    token_ttl: int = 86400  # JWT TTL in seconds (default 24h)
+    email_provider: str = "resend"  # resend | postmark
 
 
 class ServiceConfig(BaseModel):
@@ -34,7 +43,20 @@ class DomainConfig(BaseModel):
     """Domain/auth config for a service."""
 
     host: str
-    auth: str = "none"  # none | cloudflare-zero-trust | basic
+    auth: str | AuthConfig = "none"  # "none" | AuthConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_auth(cls, data: dict) -> dict:
+        """Accept auth as a string shorthand or full AuthConfig dict."""
+        if not isinstance(data, dict):
+            return data
+        auth = data.get("auth", "none")
+        if isinstance(auth, str):
+            data["auth"] = AuthConfig(mode=auth)
+        elif isinstance(auth, dict):
+            data["auth"] = AuthConfig(**auth)
+        return data
 
 
 class Manifest(BaseModel):

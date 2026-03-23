@@ -41,7 +41,10 @@ databases:
 domain:
   <service-name>:
     host: api.example.com
-    auth: none | cloudflare-zero-trust | basic
+    auth:                                  # optional auth config
+      mode: none | sidecar | middleware    # sidecar deploys auth proxy, middleware injects code
+      allowed_emails: ["*@co.com"]         # email patterns for access control
+      token_ttl: 86400                     # JWT lifetime in seconds
 ```
 
 Rules:
