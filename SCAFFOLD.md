@@ -50,7 +50,13 @@ References create implicit dependencies and are resolved during provisioning:
 | `${{server.url}}` | Deployed service URL |
 | `${{env.VAR_NAME}}` | Environment variable from host |
 
-References determine provision order via topological sort. Databases are provisioned before services that reference them.
+References work in both `env` values and `start` commands. They determine provision order via topological sort — databases are provisioned before services that reference them.
+
+**Railway internal networking:** For service-to-service communication within Railway, use private domains instead of public URLs:
+```yaml
+start: "python worker.py --url http://server.railway.internal:8100"
+```
+Private domains (`*.railway.internal`) are faster and don't require HTTPS.
 
 ## CLI Commands
 

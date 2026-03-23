@@ -238,11 +238,20 @@ async def _provision_all(
             else:
                 raise ValueError(f"Unknown service provider: {svc.provider}")
 
+            # Resolve ${{ref}} in start command
+            resolved_start = (
+                resolve_refs(svc.start, resolved_urls)
+                if svc.start
+                else None
+            )
+
             if existing and not existing.get("needs_redeploy"):
                 console.print(f"  [dim]Service {name} already provisioned, updating env[/dim]")
                 await provider.set_env_vars(existing, resolved_env)
-                if svc.start:
-                    await provider.update_start_command(existing, svc.start)
+                if resolved_start:
+                    await provider.update_start_command(
+                        existing, resolved_start
+                    )
                 resolved_urls[name] = existing.get("url", "")
                 continue
 
@@ -255,7 +264,7 @@ async def _provision_all(
                 name=name,
                 project_id=project_id,
                 source=svc.source,
-                start_command=svc.start,
+                start_command=resolved_start,
                 env=resolved_env,
                 runtime=svc.runtime,
             )
