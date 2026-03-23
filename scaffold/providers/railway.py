@@ -266,6 +266,28 @@ class RailwayProvider(Provider):
             }
         """, {"pid": project_id, "svcId": service_id, "envId": env_id, "vars": env})
 
+    async def update_start_command(
+        self, resource_state: dict[str, Any], start_command: str
+    ) -> None:
+        """Update the start command on an existing Railway service."""
+        svc_id = resource_state.get("railway_service_id")
+        env_id = resource_state.get("railway_environment_id")
+        pid = resource_state.get("railway_project_id")
+        if not svc_id:
+            return
+        if not env_id and pid:
+            env_id = await self._get_environment_id(pid)
+        if not env_id:
+            return
+        await self._gql("""
+            mutation($svcId: String!, $envId: String!, $cmd: String!) {
+                serviceInstanceUpdate(
+                    serviceId: $svcId, environmentId: $envId,
+                    input: { startCommand: $cmd }
+                )
+            }
+        """, {"svcId": svc_id, "envId": env_id, "cmd": start_command})
+
     async def set_env_vars(
         self, resource_state: dict[str, Any], env: dict[str, str]
     ) -> None:

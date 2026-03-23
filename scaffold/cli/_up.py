@@ -168,6 +168,8 @@ async def _provision_all(
             if existing and not existing.get("needs_redeploy"):
                 console.print(f"  [dim]Service {name} already provisioned, updating env[/dim]")
                 await provider.set_env_vars(existing, resolved_env)
+                if svc.start:
+                    await provider.update_start_command(existing, svc.start)
                 resolved_urls[name] = existing.get("url", "")
                 continue
 

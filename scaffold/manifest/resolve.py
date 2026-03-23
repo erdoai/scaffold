@@ -8,7 +8,7 @@ from collections import defaultdict
 from scaffold.manifest.schema import Manifest
 
 
-REF_PATTERN = re.compile(r"\$\{\{(\w+)\.(\w+)\}\}")
+REF_PATTERN = re.compile(r"\$\{\{(\w+)[\.:]([^}]+)\}\}")
 
 
 def extract_refs(value: str) -> list[tuple[str, str]]:
@@ -104,6 +104,14 @@ def resolve_refs(
                 return env_vars[ref_field]
             import os
             return os.environ.get(ref_field, match.group(0))
+
+        if resource == "file":
+            # ${{file:path}} → read file contents
+            from pathlib import Path
+            path = Path(ref_field)
+            if path.exists():
+                return path.read_text().strip()
+            return match.group(0)  # unresolved — leave as-is
 
         # ${{resource.url}} → resolved URL
         if resource in resolved_urls:

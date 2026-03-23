@@ -41,10 +41,11 @@ services:
     provider: railway
     runtime: python
     source: .
-    start: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    start: "uvicorn app:app"
     health_check: /health
     env:
       DATABASE_URL: "${{postgres.url}}"
+      APP_CONFIG: "${{file:config.yml}}"   # inject file contents as env var
 
 databases:
   postgres:
@@ -52,6 +53,15 @@ databases:
     plugin: postgres
     extensions: [pgvector]
 ```
+
+### References
+
+| Syntax | Description |
+|--------|-------------|
+| `${{postgres.url}}` | Resolved URL of a provisioned resource |
+| `${{server.url}}` | Resolved URL of a deployed service |
+| `${{env.VAR}}` | Environment variable (from `.scaffold/.env` or shell) |
+| `${{file:path}}` | Contents of a local file, injected as the env var value |
 
 Database providers: **Railway** (default, provisions in-project), **Supabase** (managed Postgres + auth), **Neon** (serverless Postgres).
 

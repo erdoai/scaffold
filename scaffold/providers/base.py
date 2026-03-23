@@ -79,3 +79,9 @@ class Provider(ABC):
     async def get_env_vars(self, resource_state: dict[str, Any]) -> dict[str, str]:
         """Pull env vars from a deployed service."""
         ...
+
+    async def update_start_command(
+        self, resource_state: dict[str, Any], start_command: str
+    ) -> None:
+        """Update the start command on an existing service."""
+        ...

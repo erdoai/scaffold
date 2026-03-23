@@ -40,8 +40,8 @@ scaffold/
 ## Key patterns
 
 - **Token resolution**: env vars > `.scaffold/.env` > `~/.scaffold/config.yml`
-- **${{ref}} syntax**: `${{postgres.url}}`, `${{server.url}}`, `${{env.VAR}}`
-- **Idempotent provisioning**: state.json tracks what exists, `up` updates not recreates
+- **${{ref}} syntax**: `${{postgres.url}}`, `${{server.url}}`, `${{env.VAR}}`, `${{file:path}}`
+- **Idempotent provisioning**: state.json tracks what exists, `up` updates env vars + start command, not recreates
 - **All commands support `--json`** for agent consumption
 - **Database providers**: railway (default), supabase, neon
 - **Railway GQL**: tested mutations documented at top of railway.py
