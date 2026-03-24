@@ -115,6 +115,10 @@ class RailwayProvider(Provider):
         }
         image = image_map.get(plugin, f"{plugin}:latest")
 
+        # Use pgvector-enabled image when requested
+        if plugin == "postgres" and extensions and "pgvector" in extensions:
+            image = "pgvector/pgvector:pg16"
+
         # Create the database service
         data = await self._gql("""
             mutation($projectId: String!, $name: String!, $image: String!) {
